@@ -99,9 +99,22 @@ input,textarea,select{font:inherit;color:inherit}
 
 /* Task list */
 .tasks{list-style:none;margin:.8rem 0 0;padding:0}
-.task{display:flex;align-items:center;gap:1rem;width:100%;min-height:4.4rem;text-align:left;background:var(--card);border-radius:1.1rem;
-  padding:1rem;margin-bottom:.7rem;box-shadow:var(--shadow);transition:transform .12s,background .3s;border:2px solid transparent}
-.task:active{transform:scale(.98)}
+.task{background:var(--card);border-radius:1.1rem;margin-bottom:.7rem;box-shadow:var(--shadow);transition:background .3s;border:2px solid transparent;overflow:hidden}
+.task .tick{display:flex;align-items:center;gap:1rem;width:100%;min-height:4.4rem;text-align:left;padding:1rem 1rem .6rem;transition:transform .12s}
+.task .tick:active{transform:scale(.98)}
+.task .notebtn{display:block;width:100%;text-align:left;padding:.15rem 1rem .85rem 4.4rem;font-size:.9rem;font-weight:600;color:var(--accent-ink);
+  white-space:pre-wrap;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.task .notebtn.has{color:var(--text);font-weight:500}
+.task .notebtn.has::before{content:"Note: ";font-weight:700;color:var(--text2)}
+.notes-day{padding:.8rem 0}
+.notes-day+.notes-day{border-top:1px solid var(--sep)}
+.notes-day .nd{font-weight:800;font-size:.95rem;margin-bottom:.35rem}
+.nitem{display:flex;gap:.5rem;padding:.3rem 0;font-size:.92rem;line-height:1.45}
+.nitem .ic{flex:none;width:1.3rem;text-align:center;font-weight:800}
+.nitem .ic.ok{color:var(--done)} .nitem .ic.no{color:var(--bad)}
+.nitem .tn{font-weight:700}
+.nitem .tx{white-space:pre-wrap;overflow-wrap:anywhere;color:var(--text2)}
+textarea.notein{width:100%;min-height:8rem;padding:.75rem;border-radius:.8rem;border:1px solid var(--sep);background:var(--card2);font-size:1.05rem;line-height:1.45;outline:none;resize:vertical}
 .task .box{width:2.4rem;height:2.4rem;border-radius:50%;border:3px solid var(--text3);flex:none;display:grid;place-items:center;transition:all .25s cubic-bezier(.3,1.4,.5,1)}
 .task .box svg{width:1.3rem;height:1.3rem;opacity:0;transform:scale(.4);transition:all .25s cubic-bezier(.3,1.4,.5,1)}
 .task .name{flex:1;font-size:1.2rem;font-weight:700;transition:color .2s}
@@ -331,7 +344,7 @@ const LS='dailycheck.v1';
 const DEFAULT_CFG={startCoins:0,milestone:500,celebrate:true,graceDays:1,countUnopened:true,allowNegative:true,weekStart:1,textSize:'large',pin:'',lastBackup:''};
 const DEFAULT_RULE={reward:100,penalty:50,perTask:0};
 let S=null;
-function defaultState(){const t=todayKey();return {v:2,startDate:t,versions:[{from:t,tasks:[]}],rules:[Object.assign({from:t},DEFAULT_RULE)],done:{},opened:{[t]:1},adjust:[],reminders:[],celebrated:0,lastOpen:t,cfg:Object.assign({},DEFAULT_CFG),updated:0};}
+function defaultState(){const t=todayKey();return {v:2,startDate:t,versions:[{from:t,tasks:[]}],rules:[Object.assign({from:t},DEFAULT_RULE)],done:{},notes:{},opened:{[t]:1},adjust:[],reminders:[],celebrated:0,lastOpen:t,cfg:Object.assign({},DEFAULT_CFG),updated:0};}
 function sane(x){
   if(!x||typeof x!=='object'||!Array.isArray(x.versions)||!x.startDate) return null;
   x.done=x.done&&typeof x.done==='object'?x.done:{};
@@ -340,6 +353,7 @@ function sane(x){
   x.cfg=Object.assign({},DEFAULT_CFG,x.cfg||{});
   if(!Array.isArray(x.rules)||!x.rules.length)x.rules=[Object.assign({from:x.startDate},DEFAULT_RULE)];
   if(!x.opened||typeof x.opened!=='object'){x.opened={};Object.keys(x.done).forEach(k=>x.opened[k]=1);}
+  x.notes=x.notes&&typeof x.notes==='object'?x.notes:{};
   x.celebrated=+x.celebrated||0; x.updated=+x.updated||0; x.v=2;
   x.versions.sort((a,b)=>a.from<b.from?-1:1);x.rules.sort((a,b)=>a.from<b.from?-1:1);
   return x;
@@ -466,11 +480,34 @@ function renderToday(v){
     <div style="min-width:0"><div class="msg">${msg}</div><div class="sub">${subt}</div><div class="chips">${chips}</div></div>
   </div>
   ${banner}${stepper}
-  <ul class="tasks">${tasks.map(x=>{const d=(S.done[k]||[]).includes(x.id);return `<li><button class="task ${d?'done':''}" data-id="${x.id}" aria-pressed="${d}"><span class="box">${ICON.check}</span><span class="name">${esc(x.name)}</span><span class="state">${d?'Done':'Tap'}</span></button></li>`;}).join('')}</ul>`;
+  <ul class="tasks">${tasks.map(x=>taskItem(k,x)).join('')}</ul>`;
   const p=$('#dPrev'),n=$('#dNext'),g=$('#goMissed');
   if(p)p.onclick=()=>{dayOff--;render();}; if(n)n.onclick=()=>{dayOff++;render();};
   if(g)g.onclick=()=>{dayOff=+g.dataset.off;render();};
-  $$('.task',v).forEach(b=>b.onclick=()=>toggle(k,b.dataset.id));
+  wireTasks(v,k,false);
+}
+function noteOf(k,id){return (S.notes[k]&&S.notes[k][id])||'';}
+function taskItem(k,x){
+  const d=(S.done[k]||[]).includes(x.id), n=noteOf(k,x.id);
+  return `<li class="task ${d?'done':''}" data-id="${x.id}"><button class="tick" data-id="${x.id}" aria-pressed="${d}"><span class="box">${ICON.check}</span><span class="name">${esc(x.name)}</span><span class="state">${d?'Done':'Tap'}</span></button>`+
+    `<button class="notebtn ${n?'has':''}" data-note="${x.id}" aria-label="${n?'Edit note':'Add a note'} for ${esc(x.name)}">${n?esc(n):'✎ Add a note'}</button></li>`;
+}
+function wireTasks(v,k,silent){
+  $$('.tick',v).forEach(b=>b.onclick=()=>{toggle(k,b.dataset.id,silent);if(silent)checkMilestone();});
+  $$('[data-note]',v).forEach(b=>b.onclick=()=>noteSheet(k,b.dataset.note));
+}
+function noteSheet(k,id){
+  const x=tasksFor(k).find(t=>t.id===id);if(!x)return;
+  const cur=noteOf(k,id), sh=$('#sheet');
+  sh.innerHTML=`<div class="grab"></div><h2>${esc(x.name)}</h2><div class="note">${fmtLong(k)}</div>
+    <label class="field"><span>Note (optional)</span><textarea class="notein" id="noteIn" maxlength="1000" placeholder="e.g. walked 30 minutes, felt good">${esc(cur)}</textarea></label>
+    <div class="btnrow">${cur?'<button class="btn danger" id="nDel">Delete note</button>':'<button class="btn plain" id="nCancel">Cancel</button>'}<button class="btn" id="nSave">Save note</button></div>`;
+  const put=val=>{val=val.trim();if(val){(S.notes[k]=S.notes[k]||{})[id]=val;}else if(S.notes[k]){delete S.notes[k][id];if(!Object.keys(S.notes[k]).length)delete S.notes[k];}
+    S.opened[k]=1;Store.save();closeSheet();render();};
+  $('#nSave').onclick=()=>{put($('#noteIn').value);toast('📝 Note saved');};
+  const c=$('#nCancel');if(c)c.onclick=closeSheet;
+  const d=$('#nDel');if(d)d.onclick=()=>{put('');toast('Note deleted');};
+  openSheet();setTimeout(()=>{const t=$('#noteIn');if(t){t.focus();t.setSelectionRange(t.value.length,t.value.length);}},350);
 }
 function toggle(k,id,silent){
   const before=dayStatus(k), bal0=balance();
@@ -525,17 +562,41 @@ function renderHistory(v){
     <div class="tile"><div class="k">Coins</div><div class="v ${s.coins<0?'down':''}">${fmtSigned(s.coins)}</div><div class="d">${vs(delta(s.coins,ps.coins))}</div></div>
     <div class="tile"><div class="k">Best streak</div><div class="v">${s.best}<span> ${s.best===1?'day':'days'}</span></div><div class="d">Now: ${plural(streak(),'day')}</div></div></div>`;
   let body;
-  if(hView==='week') body=weekView(p,pp,s,ps,off)+`<div class="section-title">Summary</div>`+tiles;
-  else if(hView==='month') body=`<div class="card chart-card">${monthCal(p)}</div><div class="section-title">Summary</div>`+tiles;
-  else if(hView==='quarter') body=quarterView(p)+`<div class="section-title">Summary</div>`+tiles;
-  else body=yearView(p)+`<div class="section-title">Summary</div>`+tiles;
+  const notesSec=`<div class="section-title">Task notes</div>`+notesList(p.a,p.b);
+  if(hView==='week') body=weekView(p,pp,s,ps,off)+`<div class="section-title">Summary</div>`+tiles+notesSec;
+  else if(hView==='month') body=`<div class="card chart-card">${monthCal(p)}</div><div class="section-title">Summary</div>`+tiles+notesSec;
+  else if(hView==='quarter') body=quarterView(p)+`<div class="section-title">Summary</div>`+tiles+notesSec;
+  else body=yearView(p)+`<div class="section-title">Summary</div>`+tiles+notesSec;
   v.innerHTML=`<div class="seg" style="margin-top:.5rem">${['week','month','quarter','year'].map(x=>`<button data-v="${x}" class="${hView===x?'on':''}">${x[0].toUpperCase()+x.slice(1)}</button>`).join('')}</div>
   <div class="pnav"><button class="round" id="pPrev" aria-label="Previous" ${prevDisabled?'disabled':''}>${ICON.left}</button><div class="lbl">${l1}<span class="small muted">${l2}</span></div><button class="round" id="pNext" aria-label="Next" ${nextDisabled?'disabled':''}>${ICON.right}</button></div>
   ${body}`;
-  $$('.seg button',v).forEach(b=>b.onclick=()=>{hView=b.dataset.v;selCell=null;render();});
-  $('#pPrev').onclick=()=>{hOff[hView]--;selCell=null;render();};
-  $('#pNext').onclick=()=>{hOff[hView]++;selCell=null;render();};
+  $$('.seg button',v).forEach(b=>b.onclick=()=>{hView=b.dataset.v;selCell=null;notesAll=false;render();});
+  $('#pPrev').onclick=()=>{hOff[hView]--;selCell=null;notesAll=false;render();};
+  $('#pNext').onclick=()=>{hOff[hView]++;selCell=null;notesAll=false;render();};
   wireCharts(v);
+  const more=$('#notesMore');if(more)more.onclick=()=>{notesAll=true;render();};
+}
+let notesAll=false;
+function dayNoteItems(k){
+  const n=S.notes[k];if(!n)return [];
+  const tasks=tasksFor(k), seen=new Set(), out=[];
+  tasks.forEach(x=>{if(n[x.id]){seen.add(x.id);out.push({name:x.name,text:n[x.id],done:(S.done[k]||[]).includes(x.id)});}});
+  // notes for tasks that were later removed from the list
+  Object.keys(n).forEach(id=>{if(!seen.has(id)){let nm='Removed task';for(const v of S.versions){const f=v.tasks.find(t=>t.id===id);if(f)nm=f.name;}out.push({name:nm,text:n[id],done:(S.done[k]||[]).includes(id)});}});
+  return out;
+}
+function notesHTML(k,items){
+  return `<div class="notes-day"><div class="nd">${fmtLong(k)}</div>${items.map(i=>`<div class="nitem"><span class="ic ${i.done?'ok':'no'}" aria-label="${i.done?'Done':'Not done'}">${i.done?'✓':'✗'}</span><div><span class="tn">${esc(i.name)}</span><div class="tx">${esc(i.text)}</div></div></div>`).join('')}</div>`;
+}
+function notesList(a,b){
+  const t=todayKey(), end=b<t?b:t, LIMIT=14;let html='',count=0,more=false;
+  for(let k=end;k>=a;k=addDays(k,-1)){
+    const items=dayNoteItems(k);if(!items.length)continue;
+    if(!notesAll&&count>=LIMIT){more=true;break;}
+    html+=notesHTML(k,items);count++;
+  }
+  if(!html)return `<div class="card note">No notes in this period. Tap “✎ Add a note” under any task on the Today screen to write one.</div>`;
+  return `<div class="card" style="padding-top:.2rem;padding-bottom:.2rem">${html}</div>${more?'<button class="btn block ghost" id="notesMore" style="margin-top:.6rem">Show older notes</button>':''}`;
 }
 function weekView(p,pp,s,ps,off){
   const t=todayKey(), cur=[],prev=[],labels=[],tips=[];
@@ -607,7 +668,8 @@ function dayNote(k){
   if(!st.total)return `<b>${fmtDay(k)}</b> · No tasks set`;
   if(st.skipped)return `<b>${fmtDay(k)}</b> · App not opened (not counted)`;
   const names=tasksFor(k).filter(x=>!(S.done[k]||[]).includes(x.id)).map(x=>esc(x.name));
-  return `<b>${fmtDay(k)}</b> · ${st.done}/${st.total} done · ${st.open&&!st.perfect?'in progress':fmtSigned(st.coins)+' coins'}${names.length&&!st.open?'<br>Missed: '+names.join(', '):''}`;
+  const ni=dayNoteItems(k);
+  return `<b>${fmtDay(k)}</b> · ${st.done}/${st.total} done · ${st.open&&!st.perfect?'in progress':fmtSigned(st.coins)+' coins'}${names.length&&!st.open?'<br>Missed: '+names.join(', '):''}${ni.length?'<br>'+ni.map(i=>`📝 <b>${esc(i.name)}</b>: ${esc(i.text)}`).join('<br>'):''}`;
 }
 function quarterView(p){
   const t=todayKey(), labels=[],vals=[],tips=[];
@@ -899,13 +961,13 @@ function renderEditDay(v){
   <div class="stepper"><button class="round" id="ePrev" ${editDate<=S.startDate?'disabled':''} aria-label="Previous day">${ICON.left}</button>
     <div class="lbl"><input type="date" id="eDate" value="${editDate}" min="${S.startDate}" max="${t}" style="font:inherit;font-weight:800;border:0;background:transparent;text-align:center"><small>${st&&st.total?`${st.done}/${st.total} done · ${st.open&&!st.perfect?'in progress':fmtSigned(st.coins)+' coins'}`:'No tasks on this day'}</small></div>
     <button class="round" id="eNext" ${editDate>=t?'disabled':''} aria-label="Next day">${ICON.right}</button></div>
-  <ul class="tasks">${tasks.map(x=>{const d=(S.done[editDate]||[]).includes(x.id);return `<li><button class="task ${d?'done':''}" data-id="${x.id}" aria-pressed="${d}"><span class="box">${ICON.check}</span><span class="name">${esc(x.name)}</span><span class="state">${d?'Done':'Tap'}</span></button></li>`;}).join('')}</ul>
+  <ul class="tasks">${tasks.map(x=>taskItem(editDate,x)).join('')}</ul>
   ${tasks.length?'':'<p class="note">This day has no tasks. Tasks only exist from the day they were added.</p>'}`;
   $('#back').onclick=()=>{sub='admin';render();};
   $('#ePrev').onclick=()=>{editDate=addDays(editDate,-1);render();};
   $('#eNext').onclick=()=>{editDate=addDays(editDate,1);render();};
   $('#eDate').onchange=e=>{if(e.target.value){editDate=e.target.value;render();}};
-  $$('.task',v).forEach(b=>b.onclick=()=>{toggle(editDate,b.dataset.id,true);checkMilestone();});
+  wireTasks(v,editDate,true);
 }
 
 /* ================= Files: backup / restore / calendar ================= */
